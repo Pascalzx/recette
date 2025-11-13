@@ -14,8 +14,9 @@ Une application web moderne pour gérer et partager vos recettes familiales avec
 ## Technologies
 
 - **Frontend**: React 18 + Vite
+- **Backend API**: Node.js + Express
 - **Styling**: Tailwind CSS
-- **Backend**: Supabase (PostgreSQL + Auth)
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
 - **OCR**: Anthropic Claude API
 - **Routing**: React Router v6
 - **Icons**: Lucide React
@@ -30,36 +31,77 @@ Une application web moderne pour gérer et partager vos recettes familiales avec
 
 ### Configuration
 
-1. **Cloner le projet**
+#### 1. Cloner le projet
 
 ```bash
 git clone <votre-repo>
 cd recette
 ```
 
-2. **Installer les dépendances**
+#### 2. Configurer Supabase
+
+- Créez un projet sur [supabase.com](https://supabase.com)
+- **Base de données** : Allez dans SQL Editor et exécutez le contenu de `supabase-schema.sql`
+- **Storage** :
+  - Créez un bucket nommé `recipe-images` (public)
+  - Exécutez les politiques RLS depuis `supabase-storage-setup.sql`
+- Récupérez vos clés depuis Settings > API :
+  - URL du projet
+  - Clé anonyme (`anon/public`)
+  - Clé service role (pour le backend uniquement)
+
+#### 3. Configuration du Backend API (Recommandé)
 
 ```bash
+cd api
 npm install
 ```
 
-3. **Configurer Supabase**
-
-   - Créez un projet sur [supabase.com](https://supabase.com)
-   - Allez dans SQL Editor et exécutez le contenu de `supabase-schema.sql`
-   - Récupérez votre URL et clé anonyme depuis Settings > API
-
-4. **Configurer les variables d'environnement**
-
-Créez un fichier `.env` à la racine du projet :
+Créez un fichier `api/.env` :
 
 ```env
-VITE_SUPABASE_URL=votre_url_supabase
-VITE_SUPABASE_ANON_KEY=votre_cle_anon_supabase
-VITE_ANTHROPIC_API_KEY=votre_cle_api_claude
+PORT=3001
+NODE_ENV=development
+
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+ANTHROPIC_API_KEY=your_anthropic_api_key
+
+ALLOWED_ORIGINS=http://localhost:5173
 ```
 
-5. **Lancer l'application**
+**Important** : Utilisez la `SERVICE_ROLE_KEY` pour le backend (pas la clé anonyme).
+
+Lancez le backend :
+
+```bash
+npm run dev
+```
+
+Le serveur API démarre sur `http://localhost:3001`
+
+Voir [api/README.md](api/README.md) pour plus de détails.
+
+#### 4. Configuration du Frontend
+
+```bash
+# Retour à la racine
+cd ..
+npm install
+```
+
+Créez un fichier `.env` à la racine :
+
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# URL du backend API
+VITE_API_URL=http://localhost:3001
+```
+
+#### 5. Lancer l'application
 
 ```bash
 npm run dev
@@ -71,17 +113,30 @@ L'application sera accessible sur `http://localhost:5173`
 
 ```
 recette/
-├── src/
+├── api/                        # Backend API Node.js
+│   ├── src/
+│   │   ├── controllers/        # Logique métier
+│   │   ├── middleware/         # Middlewares Express
+│   │   ├── routes/             # Définition des routes
+│   │   └── server.js           # Point d'entrée
+│   ├── .env.example
+│   ├── package.json
+│   └── README.md
+├── src/                        # Frontend React
 │   ├── components/
-│   │   ├── auth/          # Composants d'authentification
-│   │   ├── layout/        # Layout et navigation
-│   │   └── recipes/       # Composants de recettes
-│   ├── hooks/             # Hooks personnalisés
-│   ├── pages/             # Pages de l'application
-│   ├── services/          # Services (Supabase, Claude API)
-│   ├── types/             # Définitions de types
-│   └── utils/             # Utilitaires
-├── supabase-schema.sql    # Schéma de base de données
+│   │   ├── auth/               # Composants d'authentification
+│   │   ├── layout/             # Layout et navigation
+│   │   └── recipes/            # Composants de recettes
+│   ├── hooks/                  # Hooks personnalisés
+│   ├── pages/                  # Pages de l'application
+│   ├── services/               # Services (Supabase, API)
+│   │   ├── supabase.js         # Client Supabase
+│   │   ├── api.js              # Appels API backend
+│   │   └── claude.js           # (Fallback) Appel direct Claude
+│   ├── types/                  # Définitions de types
+│   └── utils/                  # Utilitaires
+├── supabase-schema.sql         # Schéma de base de données
+├── supabase-storage-setup.sql  # Configuration Storage
 └── README.md
 ```
 
@@ -136,24 +191,37 @@ Les recettes sont automatiquement visibles par tous les membres de votre famille
 
 ## Notes importantes
 
+### Architecture Backend API
+
+L'application utilise maintenant une architecture backend sécurisée :
+
+**Avantages** :
+- Clé API Claude protégée côté serveur
+- Upload d'images vers Supabase Storage
+- Rate limiting et sécurité renforcée
+- Validation des données
+- Logs centralisés
+
+**Endpoints** :
+- `POST /api/ocr/extract` - Extraction OCR via Claude
+- `POST /api/upload/image` - Upload d'image vers Supabase Storage
+- `DELETE /api/upload/image` - Suppression d'image
+
+Voir [api/README.md](api/README.md) pour la documentation complète.
+
 ### Sécurité
 
-- **En production** : Ne jamais exposer les clés API côté client
-- Utilisez un backend pour les appels à Claude API
-- Les clés dans `.env` ne doivent jamais être commitées
-
-### Upload d'images
-
-Dans cette version de démonstration, les images sont stockées en base64. Pour la production :
-- Utilisez Supabase Storage
-- Optimisez les images avant upload
-- Implémentez des limites de taille
+- **Authentification** : Tokens JWT Supabase vérifiés sur chaque requête
+- **RLS** : Politiques de sécurité au niveau base de données
+- **Rate Limiting** : 100 requêtes/15min par IP
+- **Validation** : Images limitées à 5MB
+- **CORS** : Origines autorisées uniquement
 
 ### Limitations actuelles
 
 - Pas de gestion avancée des familles (invitation, etc.)
-- Upload d'images en base64 (non optimisé pour production)
-- Claude API appelée depuis le frontend (devrait être backend)
+- Pas de commentaires sur les recettes
+- Pas de système de favoris
 
 ## Développement
 
@@ -168,14 +236,16 @@ npm run lint         # Linter le code
 
 ### Améliorations futures
 
-- [ ] Système d'invitation familiale
-- [ ] Upload d'images vers Supabase Storage
-- [ ] Backend API pour Claude (sécurité)
+- [ ] Système d'invitation familiale par email
 - [ ] Notes et commentaires sur les recettes
-- [ ] Favoris et évaluations
+- [ ] Favoris et évaluations avec étoiles
 - [ ] Export PDF des recettes
 - [ ] Mode hors ligne (PWA)
 - [ ] Suggestions de recettes par IA
+- [ ] Planification de menus hebdomadaires
+- [ ] Liste de courses générée depuis les recettes
+- [ ] Conversion automatique des unités
+- [ ] Support multilingue
 
 ## Support
 

@@ -4,7 +4,7 @@ import { Layout } from '../components/layout/Layout'
 import { RecipeForm } from '../components/recipes/RecipeForm'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../services/supabase'
-import { extractRecipeFromImage } from '../services/claude'
+import { extractRecipeFromImage, uploadRecipeImage } from '../services/api'
 import { Camera, Upload, Loader2, ArrowLeft } from 'lucide-react'
 
 export function AddRecipePage() {
@@ -14,6 +14,7 @@ export function AddRecipePage() {
   const [extracting, setExtracting] = useState(false)
   const [extractedData, setExtractedData] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null)
   const fileInputRef = useRef(null)
 
   const handleImageUpload = async (e) => {
@@ -30,18 +31,25 @@ export function AddRecipePage() {
       }
       reader.readAsDataURL(file)
 
-      // Convert to base64 for Claude
+      // Convert to base64 for API
       const base64Reader = new FileReader()
       base64Reader.onloadend = async () => {
         const base64String = base64Reader.result.split(',')[1]
+        const mediaType = file.type || 'image/jpeg'
 
         try {
-          const data = await extractRecipeFromImage(base64String)
+          // Extract recipe via API
+          const data = await extractRecipeFromImage(base64String, mediaType)
           setExtractedData(data)
+
+          // Upload image to Supabase Storage via API
+          const uploadResult = await uploadRecipeImage(base64String, file.name, mediaType)
+          setUploadedImageUrl(uploadResult.url)
         } catch (error) {
           alert('Erreur lors de l\'extraction de la recette. Veuillez réessayer.')
           console.error(error)
           setImagePreview(null)
+          setUploadedImageUrl(null)
         } finally {
           setExtracting(false)
         }
@@ -63,7 +71,7 @@ export function AddRecipePage() {
           {
             ...formData,
             user_id: user.id,
-            image_url: imagePreview, // In production, upload to storage
+            image_url: uploadedImageUrl || null,
           }
         ])
         .select()
@@ -181,6 +189,7 @@ export function AddRecipePage() {
                 onCancel={() => {
                   setExtractedData(null)
                   setImagePreview(null)
+                  setUploadedImageUrl(null)
                 }}
                 loading={loading}
               />
